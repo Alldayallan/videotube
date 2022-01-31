@@ -5,7 +5,8 @@ body {
     margin: 0;
 }
 
-a:hover, a {
+a:hover,
+a {
     text-decoration: none;
 }
 
@@ -80,6 +81,8 @@ a:hover, a {
 
 #mainContentContainer {
     padding: 10px 30px;
+    display: flex;
+    flex: 1;
 }
 
 #mastHeadContainer .searchBarContainer {
@@ -121,4 +124,12 @@ a:hover, a {
 #mastHeadContainer .searchBarContainer .searchButton img {
     height: 20px;
     width: 20px;
+}
+
+.column {
+    flex: 1;
+    background-color: #fff;
+    min-height: 300px;
+    padding: 20px;
+    box-shadow: rgb(0 0 0 / 0.1) 0 1px 2px;
 }
