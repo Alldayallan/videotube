@@ -2,11 +2,16 @@
 class VideoProcessor {
 
     private $con;
-    private $sizeLimit = 900000000;
+    private $sizeLimit = 500000000;
     private $allowedTypes = array("mp4", "flv", "webm", "mkv", "vob", "ogv", "ogg", "avi", "wmv", "mov", "mpeg", "mpg");
+    private $ffmpegPath;
 
+    private $ffprobePath;
+    
     public function __construct($con) {
         $this->con = $con;
+        $this->ffmpegPath = realpath("ffmpeg/windows/ffmpeg.exe");
+        $this->ffprobePath = realpath("ffmpeg/windows/ffprobe.exe");
     }
 
     public function upload($videoUploadData) {
@@ -30,6 +35,21 @@ class VideoProcessor {
 
             if(!$this->insertVideoData($videoUploadData, $finalFilePath)) {
                 echo "Insert query failed";
+                return false;
+            }
+
+            if(!$this->convertVideoToMp4($tempFilePath, $finalFilePath)) {
+                echo "Upload failed";
+                return false;
+            }
+
+            if(!$this->deleteFile($tempFilePath)) {
+                echo "Upload failed\n";
+                return false;
+            }
+
+            if(!$this->generateThumbnails($finalFilePath)) {
+                echo "Upload failed - could not generate thumbnails\n";
                 return false;
             }
             
@@ -70,18 +90,79 @@ class VideoProcessor {
     }
 
     private function insertVideoData($uploadData, $filePath) {
-        $query = $this->con->prepare("INSERT INTO videos(title, uploadedBy, description, privacy, category, filePath) 
-                                        VALUES(:title, :uploadedBy, :description, :privacy, :category, :filepath)");
+        $query = $this->con->prepare("INSERT INTO videos(title, uploadedBy, description, privacy, category, filePath)
+                                        VALUES(:title, :uploadedBy, :description, :privacy, :category, :filePath)");
 
         $query->bindParam(":title", $uploadData->title);
         $query->bindParam(":uploadedBy", $uploadData->uploadedBy);
         $query->bindParam(":description", $uploadData->description);
         $query->bindParam(":privacy", $uploadData->privacy);
         $query->bindParam(":category", $uploadData->category);
-        $query->bindParam(":filepath", $filePath);
+        $query->bindParam(":filePath", $filePath);
 
         return $query->execute();
     }
 
+    public function convertVideoToMp4($tempFilePath, $finalFilePath) {
+        $cmd = "$this->ffmpegPath -i $tempFilePath $finalFilePath 2>&1";
+
+        $outputLog = array();
+        exec($cmd, $outputLog, $returnCode);
+
+        if($returnCode != 0) {
+            //Commande failed
+            foreach($outputLog as $line) {
+                echo $line . "<br>";
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private function deleteFile($filePath) {
+        if(!unlink($filePath)) {
+            echo "Could not delete file\n";
+            return false;
+        }
+
+        return true;
+    }
+
+    public function generateThumbnails($filePath) {
+
+        $thumbnailSize = "210x118";
+        $numThumbnails = 3;
+        $pathToThumbnail = "uploads/videos/thumbnails";
+
+        $duration = $this->getVideoDuration($filePath);
+
+        $videoId = $this->con->lastInsertId();
+        $this->updateDuration($duration, $videoId);
+    }
+
+    private function getVideoDuration($filePath) {
+        return shell_exec("$this->ffprobePath -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 $filePath");
+    }
+
+    private function updateDuration($duration, $videoId) {
+        $duration = (int)$duration;
+        $hours = floor($duration / 3600);
+        $mins = floor(($duration - ($hours*3600)) / 60);
+        $secs = floor($duration % 60);
+
+        $hours = ($hours < 1) ? "" : $hours . ":";
+        $mins = ($mins < 10) ? "0" . $mins . ":" : $mins . ":";
+        $secs = ($secs < 10) ? "0" . $secs : $secs;
+
+        $duration = $hours.$mins.$secs;
+
+        $query = $this->con->prepare("UPDATE videos SET duration=:duration WHERE id=:videoId");
+        $query->bindParam(":duration", $duration);
+        $query->bindParam(":videoId", $videoId);
+        $query->execute();
+
+    }
 }
 ?>
